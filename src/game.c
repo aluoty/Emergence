@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdarg.h>
 
 State S;
 LogEntry logs[MAX_LOG];
@@ -18,17 +19,21 @@ const char *SEASONS[] = {"Spring","Summer","Autumn","Winter"};
 
 static const char *BNAMES[MAX_BUILD] = {
     "Hut","Farm","Lumber Mill","Quarry","Market","Temple",
-    "Library","Barracks","Wall","Workshop","Inn","Dock"
+    "Library","Barracks","Wall","Workshop","Inn","Dock",
+    "Forge","Granary","Sawmill","University","Observatory"
 };
 static int BCOST[MAX_BUILD][4] = {
     {5,0,3,0},{5,0,0,0},{5,5,0,0},{3,0,5,0},{8,0,3,5},{5,0,10,0},
-    {5,0,8,0},{12,10,0,0},{0,0,15,0},{8,5,0,0},{10,0,5,8},{0,8,0,10}
+    {5,0,8,0},{12,10,0,0},{0,0,15,0},{8,5,0,0},{10,0,5,8},{0,8,0,10},
+    {8,5,6,3},{10,8,0,0},{0,15,5,2},{5,10,8,5},{10,15,10,8}
 };
 static const char *BEFFECT[MAX_BUILD] = {
     "+4 pop cap","+2 food/t","+2 wood/t","+2 stone/t",
     "+1 gold/t","+1 faith/t","+1 know/t",
-    "Trains soldiers","Raid defense","Tool prod","+1 herbs +2 cap","+2 gold/trade"
+    "Trains soldiers","Raid defense","Tool prod","+1 herbs +2 cap","+2 gold/trade",
+    "+1 tools/t, +prod","-1 food consumed/t","+3 wood/t","+2 know/scholar","+1 research spd"
 };
+
 static const char *TNAMES[MAX_TECH] = {
     "Agriculture","Mining","Carpentry","Medicine","Metallurgy",
     "Architecture","Navigation","Writing","Calendar","Warfare",
@@ -42,6 +47,21 @@ static const char *TDESC[MAX_TECH] = {
     "Unlocks colonization","Unlocks space travel",
     "Communicate with aliens","Ascend to higher plane"
 };
+
+const char *CROP_NAMES[MAX_CROP] = {"Wheat","Corn","Rice","Potato","Herbs"};
+const int CROP_COST[MAX_CROP] = {5,8,7,4,3};
+const int CROP_DAYS[MAX_CROP] = {3,4,3,3,2};
+const int CROP_MIN_Y[MAX_CROP] = {8,14,10,6,4};
+const int CROP_MAX_Y[MAX_CROP] = {14,24,18,12,8};
+const int CROP_HERB[MAX_CROP] = {0,0,0,0,2};
+
+const char *HUNT_NAMES[MAX_HUNT] = {"Plains","Forest","Mountains","Swamp"};
+const char *HUNT_DESC[MAX_HUNT] = {"Safe","Moderate","Risky, big game","Dangerous, herbs"};
+const int HUNT_DANGER[MAX_HUNT] = {0,1,3,5};
+const int HUNT_MIN_F[MAX_HUNT] = {4,8,14,6};
+const int HUNT_MAX_F[MAX_HUNT] = {10,18,28,16};
+const int HUNT_HERB_CHANCE[MAX_HUNT] = {5,20,10,40};
+const int HUNT_HERB_AMT[MAX_HUNT] = {1,2,3,4};
 
 void addLog(const char *msg, Color col) {
     if (logN>=MAX_LOG) { for(int i=1;i<MAX_LOG;i++)logs[i-1]=logs[i];logN--; }
@@ -96,6 +116,19 @@ const char *tierDesc(int t) {
     return d[t];
 }
 
+int cycleCrop(int dir) {
+    S.selectedCrop = (S.selectedCrop + dir + MAX_CROP) % MAX_CROP;
+    addLogF("Crop: %s (cost %d, %d days)",(Color){100,220,100,255},
+        CROP_NAMES[S.selectedCrop], CROP_COST[S.selectedCrop], CROP_DAYS[S.selectedCrop]);
+    return S.selectedCrop;
+}
+int cycleHuntZone(int dir) {
+    S.selectedHuntZone = (S.selectedHuntZone + dir + MAX_HUNT) % MAX_HUNT;
+    addLogF("Hunt zone: %s - %s",(Color){180,255,100,255},
+        HUNT_NAMES[S.selectedHuntZone], HUNT_DESC[S.selectedHuntZone]);
+    return S.selectedHuntZone;
+}
+
 // ── ACHIEVEMENTS ──
 static void defAch(int i, const char *n, const char *d) {
     achievements[i].unlocked=0; strcpy(achievements[i].name,n);
@@ -135,7 +168,6 @@ static void initAchievements() {
     defAch(29,"Diverse","Assign every job type at once");
     defAch(30,"Riches","Accumulate 1000 gold");
     defAch(31,"Naming Day","Give your civ a name");
-    // 32-35 reserved
     defAch(32,"Hero","Train 20 soldiers");
     defAch(33,"Merchant","Accumulate 500 gold from trade");
     defAch(34,"Star Lord","Control 3 planets");
@@ -254,14 +286,25 @@ static int jobBonus(int job) {
     return b;
 }
 
+static int toolBonus(void) {
+    if (S.tools>0) return 10; // +10% per tool
+    return 0;
+}
+
 static void addResources() {
-    S.food+=S.farmers*3*jobBonus(0)+S.buildings[1]*2+(techKnown(0)?S.buildings[1]:0);
-    S.wood+=S.woodcutters*2*jobBonus(1)+S.buildings[2]*2;
-    S.stone+=S.miners*2*jobBonus(2)+S.buildings[3]*2;
+    int tb=toolBonus();
+    int fBonus=100+tb;
+    S.food+= (S.farmers*3*jobBonus(0)+S.buildings[1]*2+(techKnown(0)?S.buildings[1]:0)) * fBonus/100;
+    S.wood+=(S.woodcutters*2*jobBonus(1)+S.buildings[2]*2+S.buildings[14]*3) * fBonus/100;
+    S.stone+=(S.miners*2*jobBonus(2)+S.buildings[3]*2) * fBonus/100;
     S.gold+=S.buildings[4]+(techKnown(6)?S.buildings[11]*2:0)+(currentTier()>=3?S.galaxiesReached*2:0);
     S.herbs+=S.buildings[10];
-    S.knowledge+=S.scholars+S.buildings[6]*(techKnown(7)?2:1)+(currentTier()>=2?S.galaxiesReached*3:0);
+    S.knowledge+=S.scholars+S.buildings[6]*(techKnown(7)?2:1)
+        + S.buildings[15]*2 + S.buildings[16]
+        + (currentTier()>=2?S.galaxiesReached*3:0);
     S.faith+=S.priests+S.buildings[5]+(currentTier()>=4?S.universesReached*5:0);
+    // Forge tools production
+    S.tools+=S.buildings[12];
 }
 
 void passTime() {
@@ -269,7 +312,8 @@ void passTime() {
     if(S.day>30){S.day=1;S.season=(S.season+1)%4;seasonEvent();}
     if(S.turn%50==0) checkAchievements();
 
-    int eaten=S.pop*2;
+    int eaten=S.pop*2 - S.buildings[13]; // Granary reduces consumption
+    if(eaten<0)eaten=0;
     if(S.season==3)eaten*=2;
     S.food-=eaten;
     if(S.food<0){
@@ -284,13 +328,35 @@ void passTime() {
     if(S.food>S.pop*3){S.morale+=1;if(S.morale>100)S.morale=100;}
     if(S.morale<20&&rng(4)==0&&S.pop>0){S.pop--;addLog("People leave due to low morale.",(Color){255,120,80,255});}
 
+    // Hunt
     if(S.hunting>0){
-        S.hunting--;int g=6+rng(10)+(techKnown(0)?4:0);S.food+=g;
-        addLogF("Hunters return. +%d food",(Color){180,255,100,255},g);
-        if(S.season==3){S.health-=10;if(S.health<0)S.health=0;addLog("Hunter caught in blizzard!",(Color){255,100,100,255});}
-        else if(rng(5)==0){S.health-=5;if(S.health<0)S.health=0;addLog("Hunter injured!",(Color){255,100,100,255});}
+        S.hunting--;
+        int z=S.selectedHuntZone;
+        int g = HUNT_MIN_F[z] + rng(HUNT_MAX_F[z]-HUNT_MIN_F[z]+1);
+        S.food+=g;
+        addLogF("Hunters return from %s. +%d food",(Color){180,255,100,255},HUNT_NAMES[z],g);
+        // Danger
+        if(HUNT_DANGER[z]>0 && rng(4)<HUNT_DANGER[z]){
+            S.health-=HUNT_DANGER[z]*3; if(S.health<0)S.health=0;
+            addLogF("Hunter injured in %s!",(Color){255,100,100,255},HUNT_NAMES[z]);
+        }
+        // Herbs
+        if(rng(100)<HUNT_HERB_CHANCE[z]){
+            int h=HUNT_HERB_AMT[z]+rng(3);
+            S.herbs+=h;
+            addLogF("Hunters found %d herbs!",(Color){100,255,150,255},h);
+        }
     }
-    if(S.farming>0){S.farming--;int g=10+rng(14)+(techKnown(0)?6:0);S.food+=g;addLogF("Crops harvested! +%d food",(Color){100,220,100,255},g);}
+    // Farm
+    if(S.farming>0){
+        S.farming--;
+        int c=S.selectedCrop;
+        int y = CROP_MIN_Y[c] + rng(CROP_MAX_Y[c]-CROP_MIN_Y[c]+1);
+        S.food+=y;
+        if(CROP_HERB[c]>0){ S.herbs+=CROP_HERB[c]+rng(2); }
+        addLogF("Harvested %s! +%d food%s",(Color){100,220,100,255},
+            CROP_NAMES[c],y,CROP_HERB[c]>0?" +herbs":"");
+    }
     if(S.building>0){S.building--;S.popCap+=5;addLog("Housing done! +5 capacity",(Color){180,180,100,255});}
     if(S.scouting>0){
         S.scouting--;int r=rng(100);
@@ -300,7 +366,7 @@ void passTime() {
         else if(r<85){int a=2+rng(5);S.gold+=a;addLogF("Scouts find gold. +%d gold",(Color){255,220,80,255},a);}
         else addLog("Scouts found nothing.",(Color){140,140,140,255});
     }
-    if(S.researching>0){S.researching--;S.knowledge+=4+S.scholars;addLog("Research advances. +4 knowledge",(Color){200,150,255,255});}
+    if(S.researching>0){S.researching--;S.knowledge+=4+S.scholars+S.buildings[16];addLog("Research advances.",(Color){200,150,255,255});}
     if(S.colonizing>0){
         S.colonizing--;
         S.colonyCount+=2;
@@ -313,12 +379,10 @@ void passTime() {
     if(S.health<30&&S.herbs>0&&rng(2)==0){S.herbs--;S.health+=15;if(S.health>100)S.health=100;addLog("Herbs heal the sick.",(Color){100,255,150,255});}
     if(techKnown(3)&&S.food>S.pop*2){S.health+=1;if(S.health>100)S.health=100;}
 
-    // Tier-related bonuses
     if(currentTier()>=2) { S.knowledge+=1; }
     if(currentTier()>=3) { S.food+=S.galaxiesReached*2; S.gold+=S.galaxiesReached; }
     if(currentTier()>=4) { S.faith+=S.universesReached*3; }
 
-    // Win/lose
     if(S.pop>=WIN_POP){won=1;addLog("VICTORY! Population reaches 100!",(Color){255,255,100,255});}
     if(S.pop<=0){gameOver=1;addLog("Your civilization has fallen.",(Color){255,50,50,255});}
     if(S.turn>=MAX_TURNS){won=1;addLog("Your civilization endures for ages!",(Color){255,255,100,255});}
@@ -327,15 +391,29 @@ void passTime() {
 }
 
 // ── ACTIONS ──
-void actHunt() { if(S.health<10){addLog("Too weak.",(Color){200,200,200,255});return;}S.hunting=2;strcpy(actionDesc,"Hunters depart for 2 days.");addLog("Send hunters.",(Color){180,255,100,255});passTime();autoSave=1;}
-void actFarm() { if(S.food<5){addLog("Need 5 food.",(Color){200,200,200,255});return;}S.food-=5;S.farming=3;strcpy(actionDesc,"Crops planted. 3 days.");addLog("Plant crops.",(Color){100,220,100,255});passTime();autoSave=1;}
+void actHunt() {
+    int z=S.selectedHuntZone;
+    if(S.health<10+(HUNT_DANGER[z]*2)){addLog("Too weak for this zone.",(Color){200,200,200,255});return;}
+    if(S.hunting>0||S.farming>0){addLog("Busy! Wait for current action.",(Color){200,200,200,255});return;}
+    S.hunting=2;
+    strcpy(actionDesc,"Hunters depart for 2 days.");
+    addLogF("Send hunters to %s.",(Color){180,255,100,255},HUNT_NAMES[z]);passTime();autoSave=1;
+}
+void actFarm() {
+    int c=S.selectedCrop;
+    if(S.food<CROP_COST[c]){addLogF("Need %d food.",(Color){200,200,200,255},CROP_COST[c]);return;}
+    if(S.hunting>0||S.farming>0){addLog("Busy! Wait for current action.",(Color){200,200,200,255});return;}
+    S.food-=CROP_COST[c];S.farming=CROP_DAYS[c];
+    strcpy(actionDesc,"Crops planted.");
+    addLogF("Plant %s. %d days.",(Color){100,220,100,255},CROP_NAMES[c],CROP_DAYS[c]);passTime();autoSave=1;
+}
 void actGift() { if(S.food<S.pop*2){addLog("Not enough food.",(Color){200,200,200,255});return;}S.food-=S.pop*2;S.morale+=12;if(S.morale>100)S.morale=100;int g=(rng(3)==0&&S.pop<S.popCap)?1:0;if(g)S.pop++;addLogF("Gift food! +12 morale%s",(Color){100,255,150,255},g?" +1 pop":"");strcpy(actionDesc,g?"Food gifted! A child joins.":"Food gifted. Morale up.");passTime();autoSave=1;}
 void actBuildHomes() { if(S.wood<8){addLog("Need 8 wood.",(Color){200,200,200,255});return;}S.wood-=8;S.building=2;strcpy(actionDesc,"Building homes. +5 cap in 2d.");addLog("Build housing.",(Color){180,180,100,255});passTime();autoSave=1;}
 void actTrade() { if(S.wood<5){addLog("Need 5 wood.",(Color){200,200,200,255});return;}S.wood-=5;int g=10+rng(10)+(techKnown(6)?8:0);S.gold+=g;strcpy(actionDesc,"Traded wood for gold.");addLogF("Trade! +%d gold",(Color){255,220,80,255},g);passTime();autoSave=1;}
 void actRecruit() { if(S.gold<10){addLog("Need 10 gold.",(Color){200,200,200,255});return;}if(S.pop>=S.popCap){addLog("Need housing!",(Color){200,200,200,255});return;}S.gold-=10;S.pop+=2;strcpy(actionDesc,"Two settlers join.");addLog("Recruited settlers!",(Color){180,180,255,255});passTime();autoSave=1;}
-void actScout() { S.scouting=2;strcpy(actionDesc,"Scouts depart.");addLog("Send scouts.",(Color){180,200,255,255});passTime();autoSave=1;}
+void actScout() { if(S.scouting>0||S.hunting>0||S.farming>0){addLog("Busy!",(Color){200,200,200,255});return;}S.scouting=2;strcpy(actionDesc,"Scouts depart.");addLog("Send scouts.",(Color){180,200,255,255});passTime();autoSave=1;}
 void actRest() { S.health+=12;if(S.health>100)S.health=100;S.morale+=4;if(S.morale>100)S.morale=100;strcpy(actionDesc,"Rest. Health and morale recover.");addLog("Rest.",(Color){140,210,255,255});passTime();autoSave=1;}
-void actResearch() { if(S.knowledge<5){addLog("Need 5 knowledge.",(Color){200,200,200,255});return;}S.knowledge-=5;S.researching=3;strcpy(actionDesc,"Researching. 3 days.");addLog("Begin research.",(Color){200,150,255,255});passTime();autoSave=1;}
+void actResearch() { if(S.knowledge<5){addLog("Need 5 knowledge.",(Color){200,200,200,255});return;}if(S.researching>0){addLog("Already researching!",(Color){200,200,200,255});return;}S.knowledge-=5;S.researching=3;strcpy(actionDesc,"Researching. 3 days.");addLog("Begin research.",(Color){200,150,255,255});passTime();autoSave=1;}
 void actHeal() { if(S.herbs<2){addLog("Need 2 herbs.",(Color){200,200,200,255});return;}S.herbs-=2;int h=15+rng(15);S.health+=h;if(S.health>100)S.health=100;addLogF("Herbal med. +%d health",(Color){100,255,150,255},h);strcpy(actionDesc,"Healed with herbs.");passTime();autoSave=1;}
 void actTrain() { if(S.gold<15||S.food<15){addLog("Need 15g 15f.",(Color){200,200,200,255});return;}if(totalAssigned()>=S.pop-S.soldiers){addLog("No spare pop.",(Color){200,200,200,255});return;}S.gold-=15;S.food-=15;S.soldiers++;addLog("Trained soldier!",(Color){255,180,100,255});strcpy(actionDesc,"Soldier trained.");passTime();autoSave=1;}
 void actColonize() { if(!techKnown(10)){addLog("Need Astronomy.",(Color){200,200,200,255});return;}if(S.food<30||S.wood<20||S.gold<15){addLog("Need 30f 20w 15g.",(Color){200,200,200,255});return;}S.food-=30;S.wood-=20;S.gold-=15;S.colonizing=3;strcpy(actionDesc,"Colony expedition launched. 3 days.");addLog("Launch colony expedition!",(Color){100,200,255,255});passTime();autoSave=1;}
@@ -364,6 +442,7 @@ void buildBuilding(int b) {
     S.buildings[b]++;
     if(b==0)S.popCap+=4;
     if(b==10)S.popCap+=2;
+    // Granary effect applied in passTime
     addLogF("Built %s! (total: %d)",(Color){100,200,255,255},BNAMES[b],S.buildings[b]);
     strcpy(actionDesc,"Construction complete.");
     passTime();autoSave=1;
@@ -402,9 +481,7 @@ static void initCiv(int idx, const char *name, int seed) {
 void switchCiv(int idx) {
     if(idx<0||idx>=MAX_CIVS||!civs[idx].alive)return;
     if(!civs[idx].discovered){addLog("Civilization not yet discovered.",(Color){200,200,200,255});return;}
-    // Save current state back
     civs[currentCiv].s=S; civs[currentCiv].tier=currentTier();
-    // Load new state
     currentCiv=idx; S=civs[idx].s;
     strcpy(actionDesc,"Switched civilization view.");
     addLogF("Now viewing: %s",(Color){200,200,255,255},civs[idx].name);
@@ -467,16 +544,13 @@ void simulateAI() {
     for(int i=0;i<MAX_CIVS;i++){
         if(!civs[i].alive||i==currentCiv)continue;
         CivData *c=&civs[i];
-        // Basic AI progression
         if(rng(4)==0)c->s.food+=1+rng(5);
         if(rng(5)==0)c->s.wood+=1+rng(3);
         if(rng(8)==0)c->s.pop++;
         if(c->s.pop>c->s.popCap&&rng(3)==0)c->s.popCap+=2;
         if(c->s.food<0){c->s.food=0;c->s.pop-=rng(2);if(c->s.pop<0)c->s.pop=0;}
-        // Tech
         if(c->s.knowledge>20+rng(30)&&rng(10)==0){c->tier=1;}
         if(c->s.knowledge>50+rng(50)&&c->tier==1&&rng(15)==0){c->tier=2;}
-        // Trade with player
         if(c->discovered&&c->relation>0&&rng(20)==0){
             civs[currentCiv].s.gold+=2+rng(4);
             c->relation+=2;
@@ -492,14 +566,14 @@ void initGame() {
     S.hunting=0; S.farming=0; S.building=0; S.scouting=0; S.researching=0; S.colonizing=0;
     S.farmers=0; S.woodcutters=0; S.miners=0; S.hunters=0; S.scholars=0; S.priests=0;
     S.colonyCount=0; S.shipsBuilt=0; S.galaxiesReached=0; S.universesReached=0;
+    S.selectedCrop=0; S.selectedHuntZone=0;
     for(int i=0;i<MAX_BUILD;i++)S.buildings[i]=0;
     for(int i=0;i<MAX_TECH;i++)S.tech[i]=0;
     gameOver=0; won=0; logN=0; tab=0; autoSave=0; currentCiv=0; selectedCivIdx=0;
     srand(time(0));
     strcpy(actionDesc,"Build your civilization. Reach 100 population to win.");
 
-    // Init civilizations
-    initCiv(0,"Terran",42); // player's home civ, will be overwritten by S state
+    initCiv(0,"Terran",42);
     initCiv(1,"Zorblax",1234);
     initCiv(2,"Luminari",5678);
     initCiv(3,"Kreth",9012);
@@ -513,8 +587,9 @@ void initGame() {
     addLog("   EMERGENCE  —  Civilization Sim",(Color){220,220,100,255});
     addLog("===================================",(Color){80,100,120,255});
     addLog("Q=Overview  W=Build  E=Tech  R=Civs  A=Achievements",(Color){120,120,150,255});
-    addLog("H=Hunt  F=Farm  G=Gift  B=Homes  U=Research  T=Trade",(Color){120,120,150,255});
-    addLog("Z=Rest  C=Heal  M=Recruit  S=Scout  P=Train  I=Colonize",(Color){120,120,150,255});
-    addLog("Y=Ship  O=Explore  K=Save  L=Load  N=New",(Color){120,120,150,255});
-    addLog("1-6=Jobs  [Civs tab]:0-5=sel T=trade W=war A=ally V=switch",(Color){120,120,150,255});
+    addLog("H=Hunt  F=Farm  G=Gift  B=Homes  U=Research",(Color){120,120,150,255});
+    addLog("T=Trade  Z=Rest  C=Heal  M=Recruit  S=Scout",(Color){120,120,150,255});
+    addLog("P=Train  I=Colonize  Y=Ship  O=Explore",(Color){120,120,150,255});
+    addLog("J=Crop  D=Zone  K=Save  L=Load  N=New",(Color){120,120,150,255});
+    addLog("1-6=Jobs  [Civs]:0-5=sel T=trade W=war A=ally V=switch",(Color){120,120,150,255});
 }

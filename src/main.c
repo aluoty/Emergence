@@ -21,6 +21,7 @@ int main() {
             else if (IsKeyPressed(KEY_E)) tab=2;
             else if (IsKeyPressed(KEY_R)) tab=3;
             else if (IsKeyPressed(KEY_A)) tab=4;
+
             else if (IsKeyPressed(KEY_H)) actHunt();
             else if (IsKeyPressed(KEY_F)) actFarm();
             else if (IsKeyPressed(KEY_G)) actGift();
@@ -40,6 +41,9 @@ int main() {
             else if (IsKeyPressed(KEY_O)) actExploreGalaxy();
             else if (IsKeyPressed(KEY_K)) saveGame();
             else if (IsKeyPressed(KEY_L)) { if(loadGame())addLog("Game loaded.",(Color){200,200,200,255}); else addLog("No save file.",(Color){200,200,200,255}); }
+            else if (IsKeyPressed(KEY_J)) cycleCrop(1);
+            else if (IsKeyPressed(KEY_D)) cycleHuntZone(1);
+
             else if (IsKeyPressed(KEY_ONE)) assignJob(0);
             else if (IsKeyPressed(KEY_TWO)) assignJob(1);
             else if (IsKeyPressed(KEY_THREE)) assignJob(2);
@@ -47,8 +51,8 @@ int main() {
             else if (IsKeyPressed(KEY_FIVE)) assignJob(4);
             else if (IsKeyPressed(KEY_SIX)) assignJob(5);
 
+            // Civs tab interactions
             if (tab==3) {
-                // Civs tab interactions
                 for (int k=KEY_ZERO;k<=KEY_NINE;k++)
                     if (IsKeyPressed(k)) {
                         int idx=k-KEY_ZERO;
@@ -62,7 +66,7 @@ int main() {
                 if (selectedCivIdx==currentCiv && selectedCivIdx>0) selectedCivIdx=0;
             }
 
-            // Number keys for build/tech context
+            // Context number keys: Buildings tab & Tech tab
             for (int k=KEY_ZERO;k<=KEY_NINE;k++)
                 if (IsKeyPressed(k)) {
                     int idx=k-KEY_ZERO;
