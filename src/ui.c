@@ -52,15 +52,17 @@ static void drawTopBar(int w) {
     Color sc=S.season==3?hex(180,220,255,255):S.season==0?hex(100,220,100,255):hex(200,200,200,255);
     snprintf(buf,256,"Pop:%d/%d  %s  D%d T%d",S.pop,S.popCap,SEASONS[S.season],S.day,S.turn);
     DrawTextEx(font,buf,(Vector2){tx,10},16,1,sc);
+}
 
-    // Mini bars
-    bar(w-215,4,200,8,S.morale/100.0f,hpColor(S.morale,100),hex(25,25,40,255),hex(50,50,65,255));
+static void drawMiniBars(int w) {
+    int bx=w-215;
+    bar(bx,4,200,8,S.morale/100.0f,hpColor(S.morale,100),hex(25,25,40,255),hex(50,50,65,255));
     DrawTextEx(font,"Morale",(Vector2){w-100,-1},10,1,hex(100,100,130,255));
-    bar(w-215,15,200,8,S.health/100.0f,hpColor(S.health,100),hex(25,25,40,255),hex(50,50,65,255));
+    bar(bx,15,200,8,S.health/100.0f,hpColor(S.health,100),hex(25,25,40,255),hex(50,50,65,255));
     DrawTextEx(font,"Health",(Vector2){w-100,10},10,1,hex(100,100,130,255));
-    bar(w-215,26,200,8,clamp01(S.knowledge/100.0f),hex(180,130,220,255),hex(25,25,40,255),hex(50,50,65,255));
+    bar(bx,26,200,8,clamp01(S.knowledge/100.0f),hex(180,130,220,255),hex(25,25,40,255),hex(50,50,65,255));
     DrawTextEx(font,"Knowledge",(Vector2){w-100,21},10,1,hex(100,100,130,255));
-    bar(w-215,37,200,8,clamp01(S.faith/100.0f),hex(255,200,100,255),hex(25,25,40,255),hex(50,50,65,255));
+    bar(bx,37,200,8,clamp01(S.faith/100.0f),hex(255,200,100,255),hex(25,25,40,255),hex(50,50,65,255));
     DrawTextEx(font,"Faith",(Vector2){w-100,32},10,1,hex(100,100,130,255));
 }
 
@@ -68,15 +70,16 @@ static void drawTabs(int w) {
     int ty=52;
     DrawRectangle(0,ty,w,30,hex(14,14,22,255));
     DrawLine(0,ty+30,w,ty+30,hex(40,40,55,255));
-    const char *tabs[]={"Q: OVERVIEW","W: BUILDINGS","E: TECHNOLOGY"};
-    for(int i=0;i<3;i++) {
-        int x=20+i*210;
+    const char *tabs[]={"Q: OVERVIEW","W: BUILDINGS","E: TECHNOLOGY","R: CIVS","A: ACHIEVE"};
+    int tw=155;
+    for(int i=0;i<5;i++) {
+        int x=12+i*tw;
         if(i==tab) {
-            DrawRectangle(x-4,ty,195,30,hex(25,25,38,255));
-            DrawLine(x-4,ty+30,x+191,ty+30,hex(220,220,100,255));
+            DrawRectangle(x,ty,tw-4,30,hex(25,25,38,255));
+            DrawLine(x,ty+30,x+tw-4,ty+30,hex(220,220,100,255));
         }
         Color tc=i==tab?hex(230,230,150,255):hex(120,120,150,255);
-        DrawTextEx(font,tabs[i],(Vector2){x,ty+6},16,1,tc);
+        DrawTextEx(font,tabs[i],(Vector2){x+4,ty+6},16,1,tc);
     }
 }
 
@@ -84,7 +87,7 @@ static void drawOverview(int x,int y,int w,int h) {
     int colW=(w-24)/3;
     int colH=h-8;
 
-    // ── LEFT: Resources ──
+    // ── LEFT: Resources & Tier ──
     panel(x,y,colW,colH,"RESOURCES",hex(160,200,255,255));
     int ly=y+32;
     struct{const char*n;int v;int m;}rs[]={
@@ -97,24 +100,35 @@ static void drawOverview(int x,int y,int w,int h) {
         char buf[128]; snprintf(buf,128,"%s: %d",rs[i].n,rs[i].v);
         DrawTextEx(font,buf,(Vector2){x+14,ly},16,1,rc); ly+=22;
     }
-    ly+=4;
+    ly+=2;
     char buf[256];
     snprintf(buf,256,"Consume: %d food/turn%s",S.pop*2,S.season==3?" (x2)":"");
     Color cc=S.food>=S.pop*2?hex(140,200,140,255):hex(220,120,120,255);
     DrawTextEx(font,buf,(Vector2){x+14,ly},15,1,cc); ly+=22;
-    snprintf(buf,256,"Soldiers: %d  Knowledge: %d  Faith: %d",S.soldiers,S.knowledge,S.faith);
-    DrawTextEx(font,buf,(Vector2){x+14,ly},15,1,hex(180,180,200,255)); ly+=24;
+    snprintf(buf,256,"Soldiers: %d  Know: %d  Faith: %d",S.soldiers,S.knowledge,S.faith);
+    DrawTextEx(font,buf,(Vector2){x+14,ly},15,1,hex(180,180,200,255)); ly+=22;
 
-    const char *ongoing[5]; int oc=0;
+    // Tier info
+    int t=currentTier();
+    snprintf(buf,256,"[%s] %s",tierName(t),tierDesc(t));
+    DrawTextEx(font,buf,(Vector2){x+14,ly},15,1,hex(180,130,255,255)); ly+=18;
+    snprintf(buf,256,"Colonies: %d  Ships: %d",S.colonyCount,S.shipsBuilt);
+    DrawTextEx(font,buf,(Vector2){x+14,ly},14,1,hex(140,180,220,255)); ly+=18;
+    if(S.galaxiesReached>0){snprintf(buf,256,"Galaxies explored: %d",S.galaxiesReached);DrawTextEx(font,buf,(Vector2){x+14,ly},14,1,hex(160,200,255,255));ly+=16;}
+    if(S.universesReached>0){snprintf(buf,256,"Universes reached: %d",S.universesReached);DrawTextEx(font,buf,(Vector2){x+14,ly},14,1,hex(200,150,255,255));ly+=16;}
+
+    const char *ongoing[7]; int oc=0;
     if(S.hunting>0)ongoing[oc++]=">> Hunting...";
     if(S.farming>0)ongoing[oc++]=">> Farming...";
     if(S.building>0)ongoing[oc++]=">> Building...";
     if(S.scouting>0)ongoing[oc++]=">> Scouting...";
     if(S.researching>0)ongoing[oc++]=">> Researching...";
-    Color ocols[]={hex(180,255,100,255),hex(100,220,100,255),hex(180,180,100,255),hex(180,200,255,255),hex(200,150,255,255)};
+    if(S.colonizing>0)ongoing[oc++]=">> Colonizing...";
+    Color ocols[]={hex(180,255,100,255),hex(100,220,100,255),hex(180,180,100,255),hex(180,200,255,255),hex(200,150,255,255),hex(100,200,255,255)};
+    if(oc>0){ly+=4;DrawTextEx(font,"-- Ongoing --",(Vector2){x+14,ly},14,1,hex(140,140,170,255));ly+=18;}
     for(int i=0;i<oc;i++) { DrawTextEx(font,ongoing[i],(Vector2){x+14,ly},15,1,ocols[i]); ly+=20; }
 
-    // ── CENTER: Population ──
+    // ── CENTER: Population & Jobs ──
     int cx=x+colW+12;
     panel(cx,y,colW,colH,"POPULATION & ACTIONS",hex(160,200,255,255));
     int jy=y+32;
@@ -134,8 +148,10 @@ static void drawOverview(int x,int y,int w,int h) {
     jy+=4;
     DrawTextEx(font,"-- ACTIONS --",(Vector2){cx+14,jy},15,1,hex(140,140,170,255)); jy+=22;
     const char*acts[]={
-        "H Hunt  F Farm  G Gift  B Build","R Research  T Trade  Z Rest",
-        "C Heal  M Recruit  S Scout  P Train","N New Game",
+        "H Hunt  F Farm  G Gift  B Homes  U Research",
+        "T Trade  Z Rest  C Heal  M Recruit",
+        "S Scout  P Train  I Colonize  Y Ship",
+        "O Explore  K Save  L Load  N New",
     };
     for(int i=0;i<4;i++){DrawTextEx(font,acts[i],(Vector2){cx+14,jy},14,1,hex(120,120,150,255));jy+=20;}
 
@@ -177,6 +193,58 @@ static void drawTech(int x,int y,int w,int h) {
     }
 }
 
+static void drawCivs(int x,int y,int w,int h) {
+    panel(x,y,w-8,h,"CIVILIZATIONS  [0-5=select T=trade W=war V=switch A=ally]",hex(160,200,255,255));
+    int ly=y+34;
+    char buf[256];
+    for(int i=0;i<MAX_CIVS;i++) {
+        CivData *c=&civs[i];
+        Color discCol=c->discovered?hex(200,200,220,255):hex(100,100,120,255);
+        Color selCol=(i==selectedCivIdx)?hex(255,220,100,255):discCol;
+        const char *status=c->alive?"Alive":"Fallen";
+        const char *disc=c->discovered?"":" [Hidden]";
+        snprintf(buf,256,"%d: %s  %s%s  (Rel:%d Pop:%d Tier:%d)",i,c->name,status,disc,c->relation,c->s.pop,c->tier);
+        if(i==currentCiv) DrawTextEx(font,"<< YOU >>",(Vector2){x+14+MeasureTextEx(font,buf,16,1).x+8,ly},14,1,hex(100,200,255,255));
+        DrawTextEx(font,buf,(Vector2){x+14,ly},16,1,i==selectedCivIdx?selCol:discCol);
+        ly+=24;
+    }
+    ly+=8;
+    DrawTextEx(font,"-- Selected --",(Vector2){x+14,ly},15,1,hex(140,140,170,255)); ly+=22;
+    if(civs[selectedCivIdx].alive && civs[selectedCivIdx].discovered) {
+        CivData *c=&civs[selectedCivIdx];
+        snprintf(buf,256,"%s: Pop %d  Food %d  Wood %d  Stone %d  Gold %d",c->name,c->s.pop,c->s.food,c->s.wood,c->s.stone,c->s.gold);
+        DrawTextEx(font,buf,(Vector2){x+14,ly},15,1,hex(180,200,230,255)); ly+=20;
+        snprintf(buf,256,"Soldiers %d  Morale %d  Health %d  Relation %d",c->s.soldiers,c->s.morale,c->s.health,c->relation);
+        DrawTextEx(font,buf,(Vector2){x+14,ly},15,1,hex(180,200,230,255)); ly+=20;
+        if(selectedCivIdx!=currentCiv) {
+            DrawTextEx(font,"T = Trade  W = War  V = Switch View  A = Ally",(Vector2){x+14,ly},14,1,hex(100,180,255,255)); ly+=18;
+        }
+    } else {
+        DrawTextEx(font,"Civilization not yet discovered.",(Vector2){x+14,ly},15,1,hex(120,120,140,255));
+    }
+}
+
+static void drawAchievements(int x,int y,int w,int h) {
+    panel(x,y,w-8,h,"ACHIEVEMENTS",hex(160,200,255,255));
+    int ly=y+34;
+    char buf[256];
+    int shown=0;
+    for(int i=0;i<MAX_ACH;i++) {
+        if (achievements[i].unlocked) {
+            snprintf(buf,256,"[x] %s",achievements[i].name);
+            DrawTextEx(font,buf,(Vector2){x+14,ly},15,1,hex(200,220,200,255)); ly+=20;
+            DrawTextEx(font,achievements[i].desc,(Vector2){x+30,ly},13,1,hex(140,180,140,255)); ly+=20;
+            shown++;
+        }
+    }
+    if (shown==0) {
+        DrawTextEx(font,"No achievements yet. Keep playing!",(Vector2){x+14,ly},15,1,hex(120,120,140,255)); ly+=24;
+    }
+    ly+=12;
+    snprintf(buf,256,"Unlocked: %d / %d",shown,MAX_ACH);
+    DrawTextEx(font,buf,(Vector2){x+14,ly},14,1,hex(200,200,100,255));
+}
+
 static void drawBottomBar(int w,int h) {
     int by=h-60;
     DrawRectangle(0,by,w,60,hex(16,16,26,255));
@@ -185,15 +253,28 @@ static void drawBottomBar(int w,int h) {
     DrawTextEx(font,">",(Vector2){10,by+6},20,1,hex(80,180,255,255));
     DrawTextEx(font,actionDesc,(Vector2){34,by+8},17,1,hex(180,200,230,255));
 
-    // Progress bar
+    // Progress + tier bar
     int bx=12,by2=by+34,bw2=w-24;
+    Color tierCol = hex(180,130,255,255);
     bar(bx,by2,bw2-200,14,S.pop/(float)WIN_POP,hpColor(S.pop,WIN_POP),hex(25,25,40,255),hex(55,55,72,255));
-    char buf[64]; snprintf(buf,64,"Population: %d / %d",S.pop,WIN_POP);
+    char buf[64]; snprintf(buf,64,"Pop: %d/%d",S.pop,WIN_POP);
     DrawTextEx(font,buf,(Vector2){bx+bw2-190,by2},14,1,hex(200,200,220,255));
+
+    // Tier indicator
+    for (int ti=0; ti<=4; ti++) {
+        int tix = bx + (bw2-200) * ti / 4;
+        Color tc = ti <= currentTier() ? hex(180,130,255,255) : hex(50,50,70,255);
+        DrawRectangle(tix, by2-10, 4, 8, tc);
+        if (ti==currentTier()) {
+            snprintf(buf,64,"%s",tierName(ti));
+            DrawTextEx(font,buf,(Vector2){tix-20,by2-28},12,1,tierCol);
+        }
+    }
 }
 
 void uiDraw(int w,int h) {
     drawTopBar(w);
+    drawMiniBars(w);
     drawTabs(w);
 
     int contentY=86, contentH=h-contentY-64;
@@ -202,6 +283,8 @@ void uiDraw(int w,int h) {
     if(tab==0) drawOverview(margin,contentY,w-margin*2,contentH);
     else if(tab==1) drawBuildings(margin,contentY,w-margin*2,contentH);
     else if(tab==2) drawTech(margin,contentY,w-margin*2,contentH);
+    else if(tab==3) drawCivs(margin,contentY,w-margin*2,contentH);
+    else if(tab==4) drawAchievements(margin,contentY,w-margin*2,contentH);
 
     drawBottomBar(w,h);
 
