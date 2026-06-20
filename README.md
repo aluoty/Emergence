@@ -8,6 +8,7 @@ and interact with alien civilizations.
 ## Building & Running
 
 ```bash
+direnv allow   # if you have nix installed OR nix develop
 make           # build (requires raylib)
 ./build/emergence
 make clean     # remove binary
